@@ -99,6 +99,7 @@ import {
 import {
   CAMERA_CAPTURE_CAPABILITY,
   CAMERA_LENS_CAPABILITY,
+  CAMERA_LIBRARY_ID_CAPABILITY,
   isCameraCapture,
   validateCameraCaptureResult,
 } from "./camera-contract.ts";
@@ -130,6 +131,7 @@ import { deviceActionEffectReceipts } from "./effect-receipts.ts";
 import {
   FILES_CAPABILITY,
   FILES_OPERATION_TYPES,
+  FILES_SHOWN_TARGET_CAPABILITY,
   isFilesOperation,
 } from "./files-browser-contract.ts";
 import {
@@ -159,6 +161,7 @@ import {
   isNotesOrganizeOperation,
   NOTES_ORGANIZE_CAPABILITY,
   NOTES_ORGANIZE_TYPES,
+  NOTES_RECORD_CAPABILITY,
 } from "./notes-organize-contract.ts";
 import { validateNotesQueryResult } from "./notes-query-result.ts";
 import { notesUpdateAfterReadPlan } from "./notes-update-continuation.ts";
@@ -170,7 +173,12 @@ import {
   phoneDialReceiptOutcome,
   validatePhoneDialResult,
 } from "./phone-dial-contract.ts";
-import { PHOTO_LIBRARY_CAPABILITY } from "./photo-library-contract.ts";
+import {
+  isLibraryOperation,
+  LIBRARY_OPERATION_TYPES,
+  PHOTO_LIBRARY_CAPABILITY,
+  validateLibraryResult,
+} from "./photo-library-contract.ts";
 import {
   isPhotosViewOperation,
   PHOTOS_VIEW_CAPABILITY,
@@ -1226,6 +1234,7 @@ export const DEVICE_ACTION_CAPABILITIES: readonly string[] = [
   "notes.local-record.v1",
   NOTES_QUERY_CAPABILITY,
   NOTES_ORGANIZE_CAPABILITY,
+  NOTES_RECORD_CAPABILITY,
   NOTES_LIST_FILTER_CAPABILITY,
   NOTES_SEARCH_CAPABILITY,
   CALENDAR_AVAILABILITY_CAPABILITY,
@@ -1252,6 +1261,8 @@ export const DEVICE_ACTION_CAPABILITIES: readonly string[] = [
   PHOTO_LIBRARY_CAPABILITY,
   PHOTOS_VIEW_CAPABILITY,
   CAMERA_LENS_CAPABILITY,
+  CAMERA_LIBRARY_ID_CAPABILITY,
+  FILES_SHOWN_TARGET_CAPABILITY,
   SMS_COMPOSE_TARGET_CAPABILITY,
   CONTACT_UPDATE_VALUES_CAPABILITY,
   CONTACT_SHOW_CAPABILITY,
@@ -2410,6 +2421,7 @@ export class DeviceActionService {
         "calendar_update",
         "calendar_delete",
         ...PHOTOS_VIEW_TYPES,
+        ...LIBRARY_OPERATION_TYPES,
         ...FOREGROUND_REVIEW_TYPES,
       ].includes(validated.type)
     )
@@ -2429,7 +2441,9 @@ export class DeviceActionService {
       !(validated.type === "phone_keypad" && validated.number === undefined) &&
       getDeviceActionTurn()?.runtime === this.runtime;
     const foregroundTurn =
-      isPhotosViewOperation(validated) || isFilesOperation(validated)
+      isPhotosViewOperation(validated) ||
+      isLibraryOperation(validated) ||
+      isFilesOperation(validated)
         ? getDeviceActionTurn()
         : undefined;
     const signal = foregroundTurn && getStreamingContext()?.abortSignal;
@@ -2442,7 +2456,7 @@ export class DeviceActionService {
         validated.type === "browser_tab_switch" ||
         validated.type === "browser_find",
     });
-    // Reviewed Photos and Files proposals retain their foreground owner
+    // Reviewed Photos, library and Files proposals retain their foreground owner
     // even without a direct-request message binding.
     const assertCurrent =
       foregroundTurn?.runtime === this.runtime
@@ -3169,6 +3183,7 @@ export class DeviceActionService {
             isNativeNotesQuery(operation) ||
             isNotesOrganizeOperation(operation) ||
             isPhotosViewOperation(operation) ||
+            isLibraryOperation(operation) ||
             isBrowserControl(operation) ||
             isFilesOperation(operation) ||
             isForegroundReviewOperation(operation) ||
@@ -3250,6 +3265,11 @@ export class DeviceActionService {
       !photosViewCapabilityAvailable(c.capabilities)
     )
       throw new DeviceActionError("Photos capability unavailable");
+    if (
+      isLibraryOperation(payload.operation) &&
+      !c.capabilities?.includes(PHOTO_LIBRARY_CAPABILITY)
+    )
+      throw new DeviceActionError("Photo library capability unavailable");
     if (
       isCalendarOperation(payload.operation) &&
       !calendarCapabilityAvailable(payload.operation.type, c.capabilities)
@@ -3439,6 +3459,11 @@ export class DeviceActionService {
         !photosViewCapabilityAvailable(c.capabilities)
       )
         throw new DeviceActionError("Photos capability unavailable");
+      if (
+        isLibraryOperation(payload.operation) &&
+        !c.capabilities?.includes(PHOTO_LIBRARY_CAPABILITY)
+      )
+        throw new DeviceActionError("Photo library capability unavailable");
       const read =
         payload.operation.type === "read_selected_notes" ||
         payload.operation.type === "read_calendar_range" ||
@@ -3633,6 +3658,18 @@ export class DeviceActionService {
           };
         } catch {
           throw new DeviceActionError("Invalid Photos receipt");
+        }
+      } else if (
+        isLibraryOperation(payload.operation) &&
+        receipt.outcome === "applied"
+      ) {
+        try {
+          receipt = {
+            ...receipt,
+            result: validateLibraryResult(payload.operation, value.result),
+          };
+        } catch {
+          throw new DeviceActionError("Invalid photo library receipt");
         }
       } else if (
         isCalendarOperation(payload.operation) &&
@@ -3841,6 +3878,11 @@ export class DeviceActionService {
         !photosViewCapabilityAvailable(c.capabilities)
       )
         throw new DeviceActionError("Photos capability unavailable");
+      if (
+        isLibraryOperation(payload.operation) &&
+        !c.capabilities?.includes(PHOTO_LIBRARY_CAPABILITY)
+      )
+        throw new DeviceActionError("Photo library capability unavailable");
       if (isSmsSend(payload.operation)) {
         if (receipt.operationId !== request.execution?.providerIdempotencyKey)
           throw new DeviceActionError(
@@ -4024,6 +4066,18 @@ export class DeviceActionService {
           };
         } catch {
           throw new DeviceActionError("Invalid Photos receipt");
+        }
+      } else if (
+        isLibraryOperation(payload.operation) &&
+        receipt.outcome === "applied"
+      ) {
+        try {
+          receipt = {
+            ...receipt,
+            result: validateLibraryResult(payload.operation, value.result),
+          };
+        } catch {
+          throw new DeviceActionError("Invalid photo library receipt");
         }
       } else if (
         isCalendarOperation(payload.operation) &&
