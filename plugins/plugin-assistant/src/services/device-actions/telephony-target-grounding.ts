@@ -9,9 +9,10 @@
  * which appears in no prompt, contact, call log or memory. These checks run
  * before a proposal is persisted, so such a number never reaches review.
  */
+
+import { spokenPhoneNumbers } from "@elizaos/contracts/telephony-actions";
 import type { DeviceOperation } from "./contract.ts";
 import { phoneDialNumber } from "./phone-dial-contract.ts";
-import { spokenPhoneNumbers } from "./spoken-phone-number.ts";
 import {
   type AuthoredTelephonyTarget,
   authoredTelephonyTarget,
